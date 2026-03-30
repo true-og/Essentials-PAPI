@@ -31,6 +31,8 @@ import me.clip.placeholderapi.PlaceholderAPIPlugin;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import net.essentialsx.api.v2.services.BalanceTop;
 import org.bukkit.*;
+import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.NotNull;
@@ -64,7 +66,8 @@ public class EssentialsExpansion extends PlaceholderExpansion {
 
     @Override
     public boolean canRegister() {
-        return Bukkit.getPluginManager().getPlugin("Essentials") != null && Bukkit.getPluginManager().getPlugin("Essentials").isEnabled();
+        final Plugin plugin = getEssentialsPlugin();
+        return plugin != null && plugin.isEnabled();
     }
 
     @Override
@@ -75,13 +78,20 @@ public class EssentialsExpansion extends PlaceholderExpansion {
         t = getString("formatting.trillions", "t");
         q = getString("formatting.quadrillions", "q");
 
-        essentials = (Essentials) Bukkit.getPluginManager().getPlugin("Essentials");
+        final Plugin plugin = getEssentialsPlugin();
+        essentials = plugin instanceof Essentials ? (Essentials) plugin : null;
         if (essentials != null && essentials.isEnabled()) {
             baltop = essentials.getBalanceTop();
             baltop.calculateBalanceTopMapAsync();
             return super.register();
         }
         return false;
+    }
+
+    private Plugin getEssentialsPlugin() {
+        final PluginManager pluginManager = Bukkit.getPluginManager();
+        final Plugin plugin = pluginManager.getPlugin("Essentials-OG");
+        return plugin != null ? plugin : pluginManager.getPlugin("Essentials-OG");
     }
 
     @Override

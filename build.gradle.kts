@@ -27,7 +27,7 @@ repositories {
 dependencies {
     compileOnly("org.purpurmc.purpur:purpur-api:1.19.4-R0.1-SNAPSHOT")
     compileOnly("com.github.PlaceholderAPI:PlaceholderAPI:2.11.2")
-    compileOnly("net.essentialsx:EssentialsX:2.19.7") {
+    compileOnly("net.essentialsx:EssentialsX:2.21.0") {
         exclude(group = "org.bstats", module = "bstats-bukkit")
     }
 }
