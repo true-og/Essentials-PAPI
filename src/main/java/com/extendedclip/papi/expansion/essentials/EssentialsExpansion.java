@@ -29,15 +29,12 @@ import com.earth2me.essentials.utils.DescParseTickFormat;
 import com.google.common.primitives.Ints;
 import me.clip.placeholderapi.PlaceholderAPIPlugin;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
-import net.essentialsx.api.v2.services.BalanceTop;
 import org.bukkit.*;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.NotNull;
 
-import java.math.BigDecimal;
 import java.text.DateFormat;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
@@ -50,17 +47,9 @@ import java.util.stream.StreamSupport;
 
 public class EssentialsExpansion extends PlaceholderExpansion {
 
-    private String k;
-    private String m;
-    private String b;
-    private String t;
-    private String q;
-    private final DecimalFormat format = new DecimalFormat("#,###");
-
     private final DecimalFormat coordsFormat = new DecimalFormat("#.###");
 
     private Essentials essentials;
-    private BalanceTop baltop;
 
     private final String VERSION = getClass().getPackage().getImplementationVersion();
 
@@ -72,17 +61,9 @@ public class EssentialsExpansion extends PlaceholderExpansion {
 
     @Override
     public boolean register() {
-        k = getString("formatting.thousands", "k");
-        m = getString("formatting.millions", "m");
-        b = getString("formatting.billions", "b");
-        t = getString("formatting.trillions", "t");
-        q = getString("formatting.quadrillions", "q");
-
         final Plugin plugin = getEssentialsPlugin();
         essentials = plugin instanceof Essentials ? (Essentials) plugin : null;
         if (essentials != null && essentials.isEnabled()) {
-            baltop = essentials.getBalanceTop();
-            baltop.calculateBalanceTopMapAsync();
             return super.register();
         }
         return false;
@@ -113,117 +94,6 @@ public class EssentialsExpansion extends PlaceholderExpansion {
     public String onRequest(OfflinePlayer player, @NotNull String identifier) {
         final String papiTrue = PlaceholderAPIPlugin.booleanTrue();
         final String papiFalse = PlaceholderAPIPlugin.booleanFalse();
-
-        // Put this before the null check as most of it is not required
-        if (identifier.startsWith("baltop_")) {
-            Map<UUID, BalanceTop.Entry> baltopCache = baltop.getBalanceTopCache();
-            identifier = identifier.substring(7);
-
-            if (identifier.startsWith("balance_")) {
-                identifier = identifier.substring(8);
-
-                if (identifier.startsWith("fixed_")) {
-                    identifier = identifier.substring(6);
-
-                    Integer id = Ints.tryParse(identifier);
-                    if (id == null) {
-                        return "Invalid ID";
-                    }
-
-                    BalanceTop.Entry[] entries = baltopCache.values().toArray(new BalanceTop.Entry[0]);
-                    if (id >= entries.length) {
-                        return "0";
-                    }
-                    return String.valueOf(entries[id].getBalance().longValue());
-                }
-
-                if (identifier.startsWith("formatted_")) {
-                    identifier = identifier.substring(10);
-
-                    Integer id = Ints.tryParse(identifier);
-                    if (id == null) {
-                        return "Invalid ID";
-                    }
-
-                    BalanceTop.Entry[] entries = baltopCache.values().toArray(new BalanceTop.Entry[0]);
-                    if (id >= entries.length) {
-                        return "0";
-                    }
-                    return fixMoney(entries[id].getBalance().doubleValue());
-                }
-
-                if (identifier.startsWith("commas_")) {
-                    identifier = identifier.substring(7);
-
-                    Integer id = Ints.tryParse(identifier);
-                    if (id == null) {
-                        return "Invalid ID";
-                    }
-
-                    BalanceTop.Entry[] entries = baltopCache.values().toArray(new BalanceTop.Entry[0]);
-                    if (id >= entries.length) {
-                        return "0";
-                    }
-                    return format.format(entries[id].getBalance().doubleValue());
-                }
-
-                Integer id = Ints.tryParse(identifier);
-                if (id == null) {
-                    return "Invalid ID";
-                }
-
-                BalanceTop.Entry[] entries = baltopCache.values().toArray(new BalanceTop.Entry[0]);
-                if (id >= entries.length) {
-                    return "0";
-                }
-                return String.valueOf(entries[id].getBalance().doubleValue());
-            }
-
-            if (identifier.startsWith("player_")) {
-                identifier = identifier.substring(7);
-
-                boolean stripped = false;
-
-                if (identifier.startsWith("stripped_")) {
-                    identifier = identifier.substring(9);
-                    stripped = true;
-                }
-
-                Integer id = Ints.tryParse(identifier);
-                if (id == null) {
-                    return "Invalid ID";
-                }
-
-                BalanceTop.Entry[] entries = baltopCache.values().toArray(new BalanceTop.Entry[0]);
-                if (id >= entries.length) {
-                    return "0";
-                }
-
-                if (stripped) {
-                    User user = essentials.getUser(entries[id].getUuid());
-                    if (user != null) {
-                        return user.getName();
-                    } else {
-                        return null;
-                    }
-                } else {
-                    return entries[id].getDisplayName();
-                }
-            }
-
-            if (identifier.equals("rank")) {
-                // Another null check because it is above the normal one
-                if (player == null) return "";
-
-                if (!baltopCache.containsKey(player.getUniqueId())) {
-                    return "";
-                }
-
-                return String.valueOf(new ArrayList<>(baltopCache.keySet()).indexOf(player.getUniqueId()) + 1);
-            }
-
-            return null;
-        }
 
         if (player == null) return "";
 
@@ -372,42 +242,15 @@ public class EssentialsExpansion extends PlaceholderExpansion {
             }
         }
 
-        if (identifier.startsWith("worth")) {
-            ItemStack item;
-
-            if (identifier.contains(":")){
-                Material material = Material.getMaterial(identifier.replace("worth:", "").toUpperCase());
-
-                if (material == null) return "";
-                item = new ItemStack(material,1);
-            } else {
-                Player oPlayer = player.getPlayer();
-                if (oPlayer == null) return "";
-
-                if (oPlayer.getItemInHand().getType() == Material.AIR) return "";
-                item = oPlayer.getItemInHand();
-            }
-
-            BigDecimal worth = essentials.getWorth().getPrice(essentials, item);
-            if (worth == null) return "";
-            return String.valueOf(worth.doubleValue());
-        }
-
         final User user = essentials.getUser(player.getUniqueId());
 
         switch (identifier) {
             case "is_clearinventory_confirm":
                 return user.isPromptingClearConfirm() ? papiTrue : papiFalse;
-            case "is_pay_confirm":
-                return user.isPromptingPayConfirm() ? papiTrue : papiFalse;
-            case "is_pay_enabled":
-                return user.isAcceptingPay() ? papiTrue : papiFalse;
             case "is_teleport_enabled":
                 return user.isTeleportEnabled() ? papiTrue : papiFalse;
             case "is_muted":
                 return user.isMuted() ? papiTrue : papiFalse;
-            case "vanished":
-                return user.isVanished() ? papiTrue : papiFalse;
             case "afk":
                 return user.isAfk() ? papiTrue : papiFalse;
             case "afk_reason":
@@ -456,36 +299,5 @@ public class EssentialsExpansion extends PlaceholderExpansion {
                 return DescParseTickFormat.format24(user.getWorld() == null ? 0 : user.getWorld().getTime());
         }
         return null;
-    }
-
-    private String format(double d) {
-        NumberFormat format = NumberFormat.getInstance(Locale.ENGLISH);
-        format.setMaximumFractionDigits(2);
-        format.setMinimumFractionDigits(0);
-        return format.format(d);
-    }
-
-    private String fixMoney(double d) {
-
-        if (d < 1000L) {
-            return format(d);
-        }
-        if (d < 1000000L) {
-            return format(d / 1000L) + k;
-        }
-        if (d < 1000000000L) {
-            return format(d / 1000000L) + m;
-        }
-        if (d < 1000000000000L) {
-            return format(d / 1000000000L) + b;
-        }
-        if (d < 1000000000000000L) {
-            return format(d / 1000000000000L) + t;
-        }
-        if (d < 1000000000000000000L) {
-            return format(d / 1000000000000000L) + q;
-        }
-
-        return String.valueOf(d);
     }
 }
