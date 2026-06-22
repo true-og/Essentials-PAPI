@@ -25,14 +25,16 @@ import com.earth2me.essentials.Kit;
 import com.earth2me.essentials.User;
 import com.earth2me.essentials.utils.DateUtil;
 import com.earth2me.essentials.utils.DescParseTickFormat;
-
 import com.google.common.primitives.Ints;
 import me.clip.placeholderapi.PlaceholderAPIPlugin;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
-import org.bukkit.*;
+import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.Location;
+import org.bukkit.OfflinePlayer;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.PluginManager;
-import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
 import java.text.DateFormat;
@@ -40,39 +42,96 @@ import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.*;
-
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 public class EssentialsExpansion extends PlaceholderExpansion {
 
-    private final DecimalFormat coordsFormat = new DecimalFormat("#.###");
+    private static final DecimalFormat COORDS_FORMAT = new DecimalFormat("#.###");
+    private static final List<String> PLACEHOLDERS;
+
+    static {
+        PLACEHOLDERS = Stream.of(
+                Stream.of(
+                        "is_clearinventory_confirm",
+                        "is_teleport_enabled",
+                        "is_muted",
+                        "muted",
+
+                        "afk",
+                        "afk_reason",
+                        "afk_player_count",
+
+                        "msg_ignore",
+                        "fly",
+
+                        "nickname",
+                        "nickname_stripped",
+
+                        "muted_time_remaining",
+                        "geolocation",
+                        "godmode",
+                        "unique",
+
+                        "homes_set",
+                        "homes_max",
+
+                        "jailed",
+                        "jailed_time_remaining",
+
+                        "pm_recipient",
+                        "safe_online",
+                        "tp_cooldown",
+
+                        "world_date",
+                        "world_time",
+                        "world_time_24"
+                ),
+
+                Stream.of(
+                        "last_use",
+                        "is_available",
+                        "time_until_available",
+                        "has"
+                ).map(placeholder -> "kit_" + placeholder + "_<kit>"),
+
+                Stream.of("has_kit_<kit>"),
+
+                Stream.of(
+                        Stream.of(
+                                "total",
+                                "max",
+                                "name_<index>",
+                                "has_<name>"
+                        ),
+                        Stream.of(
+                                "world",
+                                "x",
+                                "y",
+                                "z"
+                        ).map(placeholder -> placeholder + "_<name|index>")
+                ).flatMap(placeholders -> placeholders).map(placeholder -> "home_" + placeholder)
+
+        ).flatMap(placeholders -> placeholders)
+                .map(placeholder -> "%essentials_" + placeholder + "%")
+                .toList();
+    }
 
     private Essentials essentials;
 
-    private final String VERSION = getClass().getPackage().getImplementationVersion();
-
     @Override
     public boolean canRegister() {
-        final Plugin plugin = getEssentialsPlugin();
-        return plugin != null && plugin.isEnabled();
+        return getEssentials() != null;
     }
 
     @Override
     public boolean register() {
-        final Plugin plugin = getEssentialsPlugin();
-        essentials = plugin instanceof Essentials ? (Essentials) plugin : null;
-        if (essentials != null && essentials.isEnabled()) {
-            return super.register();
-        }
-        return false;
-    }
-
-    private Plugin getEssentialsPlugin() {
-        final PluginManager pluginManager = Bukkit.getPluginManager();
-        final Plugin plugin = pluginManager.getPlugin("Essentials-OG");
-        return plugin != null ? plugin : pluginManager.getPlugin("Essentials-OG");
+        essentials = getEssentials();
+        return essentials != null && super.register();
     }
 
     @Override
@@ -87,217 +146,249 @@ public class EssentialsExpansion extends PlaceholderExpansion {
 
     @Override
     public @NotNull String getVersion() {
-        return VERSION;
+        String version = getClass().getPackage().getImplementationVersion();
+        return version == null ? "2.0.0" : version;
     }
 
     @Override
-    public String onRequest(OfflinePlayer player, @NotNull String identifier) {
-        final String papiTrue = PlaceholderAPIPlugin.booleanTrue();
-        final String papiFalse = PlaceholderAPIPlugin.booleanFalse();
+    public @NotNull List<String> getPlaceholders() {
+        return PLACEHOLDERS;
+    }
 
-        if (player == null) return "";
-
-        if (identifier.equals("tp_cooldown")) {
-            final double cooldown = essentials.getSettings().getTeleportCooldown();
-
-            final long d1 = System.currentTimeMillis();
-            final long d2 = essentials.getUser(player.getUniqueId()).getLastTeleportTimestamp();
-
-            long diff = TimeUnit.MILLISECONDS.toSeconds(d1 - d2);
-
-            if(diff < cooldown) return String.valueOf((int) (cooldown - diff));
-
-            return "0";
+    @Override
+    public String onRequest(OfflinePlayer player, @NotNull String params) {
+        if (player == null) {
+            return "";
         }
 
-        if (identifier.startsWith("kit_last_use_")) {
-            String kitName = identifier.split("kit_last_use_")[1].toLowerCase();
-            Kit kit;
+        Object output = request(player, params);
+        if (output == null) {
+            return null;
+        }
+        if (output instanceof Boolean bool) {
+            return bool ? PlaceholderAPIPlugin.booleanTrue() : PlaceholderAPIPlugin.booleanFalse();
+        }
+        return output.toString();
+    }
+
+    private Essentials getEssentials() {
+        final PluginManager pluginManager = Bukkit.getPluginManager();
+        final Plugin plugin = pluginManager.getPlugin("Essentials-OG");
+        final Plugin fallback = plugin != null ? plugin : pluginManager.getPlugin("Essentials");
+        return fallback instanceof Essentials && fallback.isEnabled() ? (Essentials) fallback : null;
+    }
+
+    private Object request(OfflinePlayer player, String params) {
+        final User user = essentials.getUser(player.getUniqueId());
+        return switch (params) {
+            case "is_clearinventory_confirm" -> user.isPromptingClearConfirm();
+            case "is_teleport_enabled" -> user.isTeleportEnabled();
+            case "is_muted", "muted" -> user.isMuted();
+
+            case "afk" -> user.isAfk();
+            case "afk_reason" -> user.getAfkMessage() == null ? "" : ChatColor.translateAlternateColorCodes('&', user.getAfkMessage());
+            case "afk_player_count" -> String.valueOf(essentials.getUserMap().getAllUniqueUsers().stream()
+                    .map(uuid -> essentials.getUser(uuid))
+                    .filter(User::isAfk)
+                    .count());
+
+            case "msg_ignore" -> user.isIgnoreMsg();
+            case "fly" -> user.getBase().getAllowFlight();
+
+            case "nickname" -> user.getNickname() != null ? user.getNickname() : player.getName();
+            case "nickname_stripped" -> ChatColor.stripColor(user.getNickname() != null ? user.getNickname() : player.getName());
+
+            case "muted_time_remaining" -> user.isMuted() ? DateUtil.formatDateDiff(user.getMuteTimeout()) : "";
+            case "geolocation" -> user.getGeoLocation() != null ? user.getGeoLocation() : "";
+            case "godmode" -> user.isGodModeEnabled();
+            case "unique" -> NumberFormat.getInstance().format(essentials.getUserMap().getUniqueUsers());
+
+            case "homes_set" -> user.getHomes().isEmpty() ? "0" : String.valueOf(user.getHomes().size());
+            case "homes_max" -> String.valueOf(essentials.getSettings().getHomeLimit(user));
+
+            case "jailed" -> user.isJailed();
+            case "jailed_time_remaining" -> user.isJailed() ? user.getFormattedJailTime() : "";
+
+            case "pm_recipient" -> user.getReplyRecipient() != null ? user.getReplyRecipient().getName() : "";
+            case "safe_online" -> String.valueOf(StreamSupport
+                    .stream(essentials.getOnlineUsers().spliterator(), false)
+                    .filter(onlineUser -> !onlineUser.isHidden())
+                    .count());
+            case "tp_cooldown" -> {
+                final double cooldown = essentials.getSettings().getTeleportCooldown();
+                final long now = System.currentTimeMillis();
+                final long lastTeleport = user.getLastTeleportTimestamp();
+                final long diff = TimeUnit.MILLISECONDS.toSeconds(now - lastTeleport);
+
+                yield diff < cooldown ? String.valueOf((int) (cooldown - diff)) : "0";
+            }
+
+            case "world_date" -> DateFormat.getDateInstance(DateFormat.MEDIUM, essentials.getI18n().getCurrentLocale())
+                    .format(DescParseTickFormat.ticksToDate(user.getWorld() == null ? 0 : user.getWorld().getFullTime()));
+            case "world_time" -> DescParseTickFormat.format12(user.getWorld() == null ? 0 : user.getWorld().getTime());
+            case "world_time_24" -> DescParseTickFormat.format24(user.getWorld() == null ? 0 : user.getWorld().getTime());
+            default -> requestPrefixed(player, user, params);
+        };
+    }
+
+    private Object requestPrefixed(OfflinePlayer player, User user, String params) {
+        String[] args = params.split("_");
+        String prefix = args[0];
+        String remaining = params.substring(prefix.length() + (params.contains("_") ? 1 : 0));
+
+        return switch (prefix) {
+            case "kit" -> requestKit(player, user, remaining);
+            case "has" -> remaining.startsWith("kit_") ? playerHasKit(player, remaining.substring("kit_".length())) : null;
+            case "home" -> requestHome(user, remaining);
+            default -> null;
+        };
+    }
+
+    private Object requestKit(OfflinePlayer player, User user, String params) {
+        if (params.startsWith("last_use_")) {
+            String kitName = params.substring("last_use_".length()).toLowerCase(Locale.ROOT);
 
             try {
-                kit = new Kit(kitName, essentials);
+                Kit kit = new Kit(kitName, essentials);
+                long time = user.getKitTimestamp(kit.getName());
+                return time <= 0 ? "0" : PlaceholderAPIPlugin.getDateFormat().format(new Date(time));
             } catch (Exception e) {
                 return "Invalid kit name";
             }
-
-            long time = essentials.getUser(player.getUniqueId()).getKitTimestamp(kit.getName());
-
-            if (time == 1 || time <= 0) {
-                return "1";
-            }
-            return PlaceholderAPIPlugin.getDateFormat().format(new Date(time));
         }
 
-        if (identifier.startsWith("kit_is_available_")) {
-            String kitName = identifier.split("kit_is_available_")[1].toLowerCase();
-            Kit kit;
-            User user = essentials.getUser(player.getUniqueId());
-            long time;
+        if (params.startsWith("is_available_")) {
+            String kitName = params.substring("is_available_".length()).toLowerCase(Locale.ROOT);
 
             try {
-                kit = new Kit(kitName, essentials);
+                Kit kit = new Kit(kitName, essentials);
+                try {
+                    return kit.getNextUse(user) == 0;
+                } catch (Exception e) {
+                    return false;
+                }
             } catch (Exception e) {
                 return "Invalid kit name";
             }
-
-            try {
-                time = kit.getNextUse(user);
-            } catch (Exception e) {
-                return papiFalse;
-            }
-
-            return time == 0 ? papiTrue : papiFalse;
         }
 
-        if (identifier.startsWith("kit_time_until_available_")) {
-            String kitName = identifier.split("kit_time_until_available_")[1].toLowerCase();
+        if (params.startsWith("time_until_available_")) {
+            String kitName = params.substring("time_until_available_".length()).toLowerCase(Locale.ROOT);
             boolean raw = false;
-            User user = essentials.getUser(player.getUniqueId());
-            Kit kit;
-            long time;
 
             if (kitName.startsWith("raw_")) {
                 raw = true;
-                kitName = kitName.substring(4);
-
-                if (kitName.isEmpty()) {
-                    return "Invalid kit name";
-                }
+                kitName = kitName.substring("raw_".length());
             }
-
-            try {
-                kit = new Kit(kitName, essentials);
-            } catch (Exception e) {
+            if (kitName.isEmpty()) {
                 return "Invalid kit name";
             }
 
             try {
-                time = kit.getNextUse(user);
-            } catch (Exception e) {
-                return "-1";
-            }
-
-            if (time <= System.currentTimeMillis()) {
-                return raw ? "0" : DateUtil.formatDateDiff(System.currentTimeMillis());
-            }
-
-            if (raw) {
-                return String.valueOf(Instant.now().until(Instant.ofEpochMilli(time), ChronoUnit.MILLIS));
-            } else {
-                return DateUtil.formatDateDiff(time);
-            }
-        }
-
-        if (identifier.startsWith("has_kit_")) {
-            Player oPlayer = player.getPlayer();
-            if (oPlayer == null) return papiFalse;
-
-            String kit = identifier.split("has_kit_")[1];
-            return oPlayer.hasPermission("essentials.kits." + kit) ? papiTrue : papiFalse;
-        }
-
-        if (identifier.startsWith("home_")) {
-            Integer homeNumber;
-            final User user = essentials.getUser(player.getUniqueId());
-
-            // Removes all the letters from the identifier to get the home slot.
-            // Checks if the number slot is an integer or not.
-            if ((homeNumber = Ints.tryParse(identifier.replaceAll("\\D+", ""))) == null) return null;
-
-            // Since it is easier for users to type from 1-x I subtract one from the original number to work from 0-x.
-            homeNumber -= 1;
-
-            // checks if the home is out of bounds and returns and empty string if it is.
-            if (homeNumber >= user.getHomes().size() || homeNumber < 0) return "";
-
-            // checks if the identifier matches the pattern home_%d
-            if (identifier.matches("(\\w+_)(\\d+)")) return user.getHomes().get(homeNumber);
-
-            //checks if the identifier matches the pattern home_%d_(w/x/y/z)
-            if (identifier.matches("(\\w+_)(\\d+)(_\\w)")) {
-
+                Kit kit = new Kit(kitName, essentials);
                 try {
-                    final Location home = user.getHome(user.getHomes().get(homeNumber));
-                    final StringBuilder stringBuilder = new StringBuilder();
-
-                    switch (identifier.charAt(identifier.length() - 1)) {
-                        case 'w':
-                            stringBuilder.append(home.getWorld().getName());
-                            break;
-                        case 'x':
-                            stringBuilder.append(coordsFormat.format(home.getX()));
-                            break;
-                        case 'y':
-                            stringBuilder.append((int) home.getY());
-                            break;
-                        case 'z':
-                            stringBuilder.append(coordsFormat.format(home.getZ()));
-                            break;
+                    long time = kit.getNextUse(user);
+                    if (time <= System.currentTimeMillis()) {
+                        return raw ? "0" : DateUtil.formatDateDiff(System.currentTimeMillis());
                     }
-
-                    return stringBuilder.toString();
+                    return raw ? String.valueOf(Instant.now().until(Instant.ofEpochMilli(time), ChronoUnit.MILLIS)) : DateUtil.formatDateDiff(time);
                 } catch (Exception e) {
-                    return null;
+                    return "-1";
                 }
+            } catch (Exception e) {
+                return "Invalid kit name";
             }
         }
 
-        final User user = essentials.getUser(player.getUniqueId());
-
-        switch (identifier) {
-            case "is_clearinventory_confirm":
-                return user.isPromptingClearConfirm() ? papiTrue : papiFalse;
-            case "is_teleport_enabled":
-                return user.isTeleportEnabled() ? papiTrue : papiFalse;
-            case "is_muted":
-                return user.isMuted() ? papiTrue : papiFalse;
-            case "afk":
-                return user.isAfk() ? papiTrue : papiFalse;
-            case "afk_reason":
-                if (user.getAfkMessage() == null) return "";
-                return ChatColor.translateAlternateColorCodes('&', user.getAfkMessage());
-            case "afk_player_count":
-                return String.valueOf(essentials.getUserMap().getAllUniqueUsers().stream()
-                        .map(UUID -> essentials.getUser(UUID)).filter(User::isAfk)
-                        .count());
-            case "msg_ignore":
-                return user.isIgnoreMsg() ? papiTrue : papiFalse;
-            case "fly":
-                return user.getBase().getAllowFlight() ? papiTrue : papiFalse;
-            case "nickname":
-                return user.getNickname() != null ? essentials.getUser(player.getUniqueId()).getNickname() : player.getName();
-            case "nickname_stripped":
-                return ChatColor.stripColor(user.getNickname() != null ? essentials.getUser(player.getUniqueId()).getNickname() : player.getName());
-            case "muted_time_remaining":
-                return user.isMuted() ? DateUtil.formatDateDiff(user.getMuteTimeout()) : "";
-            case "geolocation":
-                return user.getGeoLocation() != null ? user.getGeoLocation() : "";
-            case "godmode":
-                return user.isGodModeEnabled() ? papiTrue : papiFalse;
-            case "unique":
-                return NumberFormat.getInstance().format(essentials.getUserMap().getUniqueUsers());
-            case "homes_set":
-                return user.getHomes().isEmpty() ? "0" : String.valueOf(user.getHomes().size());
-            case "homes_max":
-                return String.valueOf(essentials.getSettings().getHomeLimit(user));
-            case "jailed":
-                return user.isJailed() ? papiTrue : papiFalse;
-            case "jailed_time_remaining":
-                return user.isJailed() ? user.getFormattedJailTime() : "";
-            case "pm_recipient":
-                return user.getReplyRecipient() != null ? user.getReplyRecipient().getName() : "";
-            case "safe_online":
-                return String.valueOf(StreamSupport.stream(essentials.getOnlineUsers().spliterator(), false)
-                        .filter(user1 -> !user1.isHidden())
-                        .count());
-            case "world_date":
-                return DateFormat.getDateInstance(DateFormat.MEDIUM, essentials.getI18n().getCurrentLocale())
-                        .format(DescParseTickFormat.ticksToDate(user.getWorld() == null ? 0 : user.getWorld().getFullTime()));
-            case "world_time":
-                return DescParseTickFormat.format12(user.getWorld() == null ? 0 : user.getWorld().getTime());
-            case "world_time_24":
-                return DescParseTickFormat.format24(user.getWorld() == null ? 0 : user.getWorld().getTime());
+        if (params.startsWith("has_")) {
+            return playerHasKit(player, params.substring("has_".length()));
         }
+
         return null;
+    }
+
+    private Object requestHome(User user, String params) {
+        List<String> homes = user.getHomes();
+
+        if (isLegacyHome(params)) {
+            return requestLegacyHome(user, homes, params);
+        }
+
+        String[] args = params.split("_", 2);
+        String type = args[0];
+        String homeName = args.length == 2 ? args[1] : "";
+        Integer homeNumber = Ints.tryParse(homeName);
+
+        return switch (type) {
+            case "total" -> String.valueOf(homes.size());
+            case "max" -> String.valueOf(essentials.getSettings().getHomeLimit(user));
+            case "has" -> user.hasHome(homeName);
+            case "name" -> homeNumber == null || homeNumber < 0 || homeNumber >= homes.size() ? "" : homes.get(homeNumber);
+            case "w", "world", "x", "y", "z" -> requestHomeLocation(user, homes, homeName, homeNumber, type);
+            default -> null;
+        };
+    }
+
+    private Object requestHomeLocation(User user, List<String> homes, String homeName, Integer homeNumber, String type) {
+        if (homeNumber != null && (homeNumber < 0 || homeNumber >= homes.size())) {
+            return "Invalid home";
+        }
+
+        Location home = user.getHome(homeNumber == null ? homeName : homes.get(homeNumber));
+        if (home == null) {
+            return "Invalid home";
+        }
+
+        Object output = switch (type) {
+            case "w", "world" -> home.getWorld() == null ? "null" : home.getWorld().getName();
+            case "x" -> home.getX();
+            case "y" -> home.getY();
+            case "z" -> home.getZ();
+            default -> null;
+        };
+        return output instanceof Double coords ? COORDS_FORMAT.format(coords) : output;
+    }
+
+    private Object requestLegacyHome(User user, List<String> homes, String params) {
+        String[] args = params.split("_", 2);
+        Integer homeNumber = Ints.tryParse(args[0]);
+        if (homeNumber == null) {
+            return null;
+        }
+
+        homeNumber -= 1;
+        if (homeNumber >= homes.size() || homeNumber < 0) {
+            return "";
+        }
+
+        if (args.length == 1) {
+            return homes.get(homeNumber);
+        }
+
+        try {
+            Location home = user.getHome(homes.get(homeNumber));
+            if (home == null) {
+                return null;
+            }
+
+            return switch (args[1]) {
+                case "w" -> home.getWorld() == null ? "null" : home.getWorld().getName();
+                case "x" -> COORDS_FORMAT.format(home.getX());
+                case "y" -> String.valueOf((int) home.getY());
+                case "z" -> COORDS_FORMAT.format(home.getZ());
+                default -> null;
+            };
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private boolean playerHasKit(OfflinePlayer player, String kit) {
+        Player onlinePlayer = player.getPlayer();
+        return onlinePlayer != null && onlinePlayer.hasPermission("essentials.kits." + kit);
+    }
+
+    private boolean isLegacyHome(String params) {
+        return params.matches("\\d+(_[wxyz])?");
     }
 }

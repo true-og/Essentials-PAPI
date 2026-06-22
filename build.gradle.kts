@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.extendedclip.papi.expansion.essentials"
-version = "1.5.2"
+version = "2.0.0"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
