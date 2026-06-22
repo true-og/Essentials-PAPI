@@ -28,8 +28,9 @@ import com.earth2me.essentials.utils.DescParseTickFormat;
 import com.google.common.primitives.Ints;
 import me.clip.placeholderapi.PlaceholderAPIPlugin;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
@@ -52,6 +53,9 @@ import java.util.stream.StreamSupport;
 public class EssentialsExpansion extends PlaceholderExpansion {
 
     private static final DecimalFormat COORDS_FORMAT = new DecimalFormat("#.###");
+    private static final LegacyComponentSerializer LEGACY_AMPERSAND = LegacyComponentSerializer.legacyAmpersand();
+    private static final LegacyComponentSerializer LEGACY_SECTION = LegacyComponentSerializer.legacySection();
+    private static final PlainTextComponentSerializer PLAIN_TEXT = PlainTextComponentSerializer.plainText();
     private static final List<String> PLACEHOLDERS;
 
     static {
@@ -186,7 +190,7 @@ public class EssentialsExpansion extends PlaceholderExpansion {
             case "is_muted", "muted" -> user.isMuted();
 
             case "afk" -> user.isAfk();
-            case "afk_reason" -> user.getAfkMessage() == null ? "" : ChatColor.translateAlternateColorCodes('&', user.getAfkMessage());
+            case "afk_reason" -> user.getAfkMessage() == null ? "" : translateLegacyAmpersand(user.getAfkMessage());
             case "afk_player_count" -> String.valueOf(essentials.getUserMap().getAllUniqueUsers().stream()
                     .map(uuid -> essentials.getUser(uuid))
                     .filter(User::isAfk)
@@ -196,7 +200,7 @@ public class EssentialsExpansion extends PlaceholderExpansion {
             case "fly" -> user.getBase().getAllowFlight();
 
             case "nickname" -> user.getNickname() != null ? user.getNickname() : player.getName();
-            case "nickname_stripped" -> ChatColor.stripColor(user.getNickname() != null ? user.getNickname() : player.getName());
+            case "nickname_stripped" -> stripLegacyFormatting(user.getNickname() != null ? user.getNickname() : player.getName());
 
             case "muted_time_remaining" -> user.isMuted() ? DateUtil.formatDateDiff(user.getMuteTimeout()) : "";
             case "geolocation" -> user.getGeoLocation() != null ? user.getGeoLocation() : "";
@@ -390,5 +394,13 @@ public class EssentialsExpansion extends PlaceholderExpansion {
 
     private boolean isLegacyHome(String params) {
         return params.matches("\\d+(_[wxyz])?");
+    }
+
+    private String translateLegacyAmpersand(String input) {
+        return LEGACY_SECTION.serialize(LEGACY_AMPERSAND.deserialize(input));
+    }
+
+    private String stripLegacyFormatting(String input) {
+        return PLAIN_TEXT.serialize(LEGACY_SECTION.deserialize(input));
     }
 }
